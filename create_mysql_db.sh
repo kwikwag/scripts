@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 usage() {
 	cat >/dev/stderr <<USAGE
@@ -118,16 +118,29 @@ fi # if [ ! -e "${cnf}" ]
 # If the database was never initialized (no mysql subdir), initialize it
 if [ ! -d ${data_dir}/mysql ]; then
 	echo "Creating barebones database..."
-	mysql_install_db --user=$(whoami) --defaults-file=${cnf} --datadir=${data_dir}
+	mysqld --defaults-file=${cnf}  --datadir=${data_dir} --explicit-defaults-for-timestamp --initialize-insecure || \
+		(echo "Error while creating database. Make sure AppArmor isn't set up to block mysqld from " \
+			"this directory; see http://informationideas.com/news/2010/04/15/changing-mysql-data-directory-require-change-to-apparmor/"; exit 1) 2>&1 | \
+		tee mysqld_initialize.log
+	#mysql_install_db --defaults-file=${cnf} --datadir=${data_dir} --user=$(whoami)
 fi # if [ ! -d ${data_dir}/mysql ]
 
 # Create a connection script if one is missing
 if [ ! -e "${connect_script}" ]; then
 
 	echo "Creating connection script..."
+
+	# root_pwd=$(grep "A temporary password is generated for" mysqld_initialize.log | awk '{print $NF}')
+	# if [ -n $root_pwd ]; then
+	#	root_pwd_opt="--password=${root_pwd}"
+	# else
+	#	root_pwd_opt="--password"
+	# fi
+	root_pwd_opt=""
+
 ################################################################# heredoc start
 	cat > "${connect_script}" <<SCRIPT
-#!/bin/sh
+#!/bin/bash
 #
 # Usage: ${connect_script} [mysql options ...] [< SQL_FILE] > [> OUT_FILE]
 #
@@ -179,7 +192,7 @@ done
 
 /usr/bin/mysql \\
     --defaults-file=\${cnf} \\
-    --user=root \\
+    --user=root ${root_pwd_opt} \\
     --socket=\${sock} "\$@"
 
 if [ "\${started_mysqld}" == "1" ]; then
